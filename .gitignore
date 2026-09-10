@@ -1,0 +1,31 @@
+# ===== Secrets / environment =====
+.env
+*.env
+*.env.local
+!.env.example
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# ===== Node =====
+node_modules/
+dist/
+dist-ssr/
+*.log
+npm-debug.log*
+
+# ===== App uploads (user QR codes & payment screenshots) =====
+backend/uploads/
+
+# ===== IDE / OS =====
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.sw?
