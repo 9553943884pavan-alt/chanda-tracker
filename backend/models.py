@@ -17,6 +17,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import JSONB
 
 
 class Base(DeclarativeBase):
@@ -81,6 +82,8 @@ class OTPCode(Base):
     email: Mapped[str] = mapped_column(String(150), nullable=False)
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     purpose: Mapped[str] = mapped_column(String(20), nullable=False)
+    # signup pending data (full_name, roll_no, role, year, branch, gender) stored with the code so it survives restarts
+    payload: Mapped[dict | None] = mapped_column(JSONB)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     attempts: Mapped[int | None] = mapped_column(SmallInteger, server_default=text("0"))
     created_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

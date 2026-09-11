@@ -15,7 +15,15 @@ from storage import get_signed_url, upload_file
 
 router = APIRouter(prefix="/giver", tags=["giver"])
 MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024
-TRANSACTION_REF_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
+# UPI UTR: exactly 12 digits (e.g. 139709650010)
+UTR_PATTERN = re.compile(r"^\d{12}$")
+# PhonePe Transaction ID: T followed by 20-23 digits (total length 21-24)
+PHONEPE_TXN_PATTERN = re.compile(r"^T\d{20,23}$")
+
+
+def is_valid_transaction_ref(ref: str) -> bool:
+    ref = ref.strip()
+    return bool(UTR_PATTERN.match(ref)) or bool(PHONEPE_TXN_PATTERN.match(ref))
 
 
 async def get_current_giver(current_user: User = Depends(get_current_user)) -> User:
@@ -151,10 +159,13 @@ async def submit_payment(
         raise HTTPException(status_code=422, detail="Amount must be a valid number") from exc
     if amount <= 0:
         raise HTTPException(status_code=422, detail="Amount must be greater than zero")
-    if not TRANSACTION_REF_PATTERN.fullmatch(transaction_ref):
+
+    # strip copy-paste whitespace so " 139709650010 " and "139709650010" are the same value
+    transaction_ref = transaction_ref.strip()
+    if not is_valid_transaction_ref(transaction_ref):
         raise HTTPException(
-            status_code=422,
-            detail="transaction_ref may contain only letters, numbers, dots, underscores, and hyphens",
+            status_code=400,
+            detail="Enter a valid 12-digit UTR number or a PhonePe Transaction ID starting with T (e.g. 139709650010 or T2609110049222606913740)",
         )
     if not screenshot.content_type or not screenshot.content_type.startswith("image/"):
         raise HTTPException(status_code=422, detail="screenshot must be an image file")

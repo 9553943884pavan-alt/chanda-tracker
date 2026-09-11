@@ -1,6 +1,5 @@
 import os
 import secrets
-from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
@@ -27,21 +26,8 @@ password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY = timedelta(days=7)
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
-
-
-@dataclass
-class PendingSignup:
-    full_name: str
-    email: str
-    roll_no: str
-    role: str
-    year: int | None
-    branch: str | None
-    gender: str | None
-    expires_at: datetime
-
-
-pending_signups: dict[str, PendingSignup] = {}
+# OTP codes are printed to the server console only when DEBUG=true is set (dev environments)
+DEBUG_MODE = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class SignupRequest(BaseModel):
@@ -80,14 +66,6 @@ def normalize_email(email: str) -> str:
     return email.strip().lower()
 
 
-def get_pending_signup(email: str) -> PendingSignup | None:
-    pending = pending_signups.get(email)
-    if pending and pending.expires_at > datetime.now(timezone.utc):
-        return pending
-    pending_signups.pop(email, None)
-    return None
-
-
 async def send_brevo_email(email: str, subject: str, text_content: str) -> None:
     api_key = os.getenv("BREVO_API_KEY")
     from_email = os.getenv("FROM_EMAIL")
@@ -118,9 +96,10 @@ def require_jwt_secret() -> str:
 
 
 async def send_signup_otp(email: str, otp: str) -> None:
-    print(f"\n==========================================")
-    print(f"[CHANDA TRACKER OTP] Email: {email} | Code: {otp}")
-    print(f"==========================================\n")
+    if DEBUG_MODE:
+        print(f"\n==========================================")
+        print(f"[CHANDA TRACKER OTP] Email: {email} | Code: {otp}")
+        print(f"==========================================\n")
     try:
         await send_brevo_email(
             email,
@@ -128,13 +107,15 @@ async def send_signup_otp(email: str, otp: str) -> None:
             f"Your Chanda Tracker verification code is {otp}. It expires in 10 minutes.",
         )
     except HTTPException as exc:
-        print(f"[CHANDA TRACKER OTP] Email sending failed: {exc.detail}. Use console OTP code: {otp}")
+        if DEBUG_MODE:
+            print(f"[CHANDA TRACKER OTP] Email sending failed: {exc.detail}. Use console OTP code: {otp}")
 
 
 async def send_reset_otp(email: str, otp: str) -> None:
-    print(f"\n==========================================")
-    print(f"[CHANDA TRACKER RESET OTP] Email: {email} | Code: {otp}")
-    print(f"==========================================\n")
+    if DEBUG_MODE:
+        print(f"\n==========================================")
+        print(f"[CHANDA TRACKER RESET OTP] Email: {email} | Code: {otp}")
+        print(f"==========================================\n")
     try:
         await send_brevo_email(
             email,
@@ -142,7 +123,8 @@ async def send_reset_otp(email: str, otp: str) -> None:
             f"Your Chanda Tracker password reset code is {otp}. It expires in 10 minutes.",
         )
     except HTTPException as exc:
-        print(f"[CHANDA TRACKER RESET OTP] Email sending failed: {exc.detail}. Use console OTP code: {otp}")
+        if DEBUG_MODE:
+            print(f"[CHANDA TRACKER RESET OTP] Email sending failed: {exc.detail}. Use console OTP code: {otp}")
 
 
 def validate_password_rules(password: str) -> None:
@@ -178,21 +160,21 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
 
     otp = f"{secrets.randbelow(1_000_000):06d}"
     now = datetime.now(timezone.utc)
-    pending_signups[email] = PendingSignup(
-        full_name=request.full_name,
-        email=email,
-        roll_no=request.roll_no,
-        role=request.role,
-        year=request.year,
-        branch=request.branch,
-        gender=request.gender,
-        expires_at=now + timedelta(minutes=10),
-    )
     db.add(
         OTPCode(
             email=email,
             code_hash=password_context.hash(otp),
             purpose="signup",
+            # pending signup data travels with the code so a restart mid-signup loses nothing
+            payload={
+                "full_name": request.full_name,
+                "email": email,
+                "roll_no": request.roll_no,
+                "role": request.role,
+                "year": request.year,
+                "branch": request.branch,
+                "gender": request.gender,
+            },
             expires_at=now + timedelta(minutes=10),
             attempts=0,
         )
@@ -203,10 +185,9 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
         await send_signup_otp(email, otp)
     except Exception as exc:
         await db.rollback()
-        pending_signups.pop(email, None)
         raise HTTPException(status_code=500, detail="Failed to initialize signup process") from exc
 
-    return {"message": "Verification code sent. Check your email (or server log in dev) to continue signup."}
+    return {"message": "Verification code sent. Check your email to continue signup."}
 
 
 
@@ -214,10 +195,6 @@ async def signup(request: SignupRequest, db: AsyncSession = Depends(get_db)):
 async def verify_otp(request: VerifyOTPRequest, db: AsyncSession = Depends(get_db)):
     validate_password_rules(request.password)
     email = normalize_email(request.email)
-    pending = get_pending_signup(email)
-    if not pending:
-        raise HTTPException(status_code=400, detail="Signup request expired or not found")
-
 
     otp_record = await db.scalar(
         select(OTPCode)
@@ -229,7 +206,7 @@ async def verify_otp(request: VerifyOTPRequest, db: AsyncSession = Depends(get_d
         .order_by(desc(OTPCode.id))
         .limit(1)
     )
-    if not otp_record:
+    if not otp_record or not otp_record.payload:
         raise HTTPException(status_code=400, detail="Verification code expired or not found")
 
     attempts = otp_record.attempts or 0
@@ -243,15 +220,16 @@ async def verify_otp(request: VerifyOTPRequest, db: AsyncSession = Depends(get_d
             raise HTTPException(status_code=429, detail="Too many invalid verification attempts")
         raise HTTPException(status_code=400, detail="Invalid verification code")
 
+    pending = otp_record.payload
     user = User(
-        full_name=pending.full_name,
-        email=pending.email,
-        roll_no=pending.roll_no,
+        full_name=pending["full_name"],
+        email=email,
+        roll_no=pending["roll_no"],
         password_hash=password_context.hash(request.password),
-        role=pending.role,
-        year=pending.year,
-        branch=pending.branch,
-        gender=pending.gender,
+        role=pending["role"],
+        year=pending.get("year"),
+        branch=pending.get("branch"),
+        gender=pending.get("gender"),
         email_verified=True,
     )
     db.add(user)
@@ -262,7 +240,6 @@ async def verify_otp(request: VerifyOTPRequest, db: AsyncSession = Depends(get_d
         await db.rollback()
         raise HTTPException(status_code=409, detail="Email or roll number is already registered") from exc
 
-    pending_signups.pop(email, None)
     return {"message": "Email verified and account created"}
 
 

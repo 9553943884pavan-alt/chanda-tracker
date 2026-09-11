@@ -8,6 +8,15 @@ function errorMessage(error, fallback) {
   return error.response?.data?.detail || fallback
 }
 
+// UPI UTR: exactly 12 digits | PhonePe Transaction ID: T followed by 20-23 digits
+const UTR_PATTERN = /^\d{12}$/
+const PHONEPE_TXN_PATTERN = /^T\d{20,23}$/
+
+function isValidTransactionRef(ref) {
+  const value = ref.trim()
+  return UTR_PATTERN.test(value) || PHONEPE_TXN_PATTERN.test(value)
+}
+
 export default function GiverDashboard() {
   const { logout } = useAuth()
   const [collector, setCollector] = useState(null)
@@ -67,9 +76,14 @@ export default function GiverDashboard() {
       setSubmitting(false)
       return
     }
+    if (!isValidTransactionRef(form.transaction_ref)) {
+      setError('Enter a valid 12-digit UTR number or a PhonePe Transaction ID starting with T.')
+      setSubmitting(false)
+      return
+    }
     const formData = new FormData()
     formData.append('amount', form.amount)
-    formData.append('transaction_ref', form.transaction_ref)
+    formData.append('transaction_ref', form.transaction_ref.trim())
     formData.append('screenshot', form.screenshot)
     try {
       const { data } = await api.post('/giver/submit-payment', formData)
@@ -130,7 +144,11 @@ export default function GiverDashboard() {
           <h2 className="mt-2 font-display text-2xl font-semibold text-stone-950">Submit a payment</h2>
           <form className="mt-6 max-w-xl space-y-5" onSubmit={submitPayment}>
             <label className="field-label">Amount (₹)<input className="field-input" name="amount" type="number" min="0.01" step="0.01" value={form.amount} onChange={updateForm} placeholder="500.00" required /></label>
-            <label className="field-label">Transaction reference (UTR / Txn ID)<input className="field-input" name="transaction_ref" value={form.transaction_ref} onChange={updateForm} placeholder="UPI transaction ID" required /></label>
+            <label className="field-label">
+              Transaction reference (UTR / Txn ID)
+              <input className="field-input" name="transaction_ref" value={form.transaction_ref} onChange={updateForm} placeholder="139709650010 or T2609110049222606913740" required />
+              <span className="mt-1 text-xs text-stone-500 font-normal">Enter your 12-digit UTR number or PhonePe Transaction ID</span>
+            </label>
             <label className="field-label">Payment screenshot<input className="field-input file:mr-3 file:rounded-md file:border-0 file:bg-teal-50 file:px-2 file:py-1 file:text-xs file:font-bold" name="screenshot" type="file" accept="image/*" onChange={updateForm} required /></label>
             <button className="primary-button" type="submit" disabled={submitting}>{submitting ? 'Submitting...' : 'Submit payment proof'}</button>
           </form>
