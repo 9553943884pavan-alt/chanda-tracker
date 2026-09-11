@@ -79,7 +79,7 @@ class OTPCode(Base):
     __table_args__ = (CheckConstraint("purpose IN ('signup','reset')"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    email: Mapped[str] = mapped_column(String(150), nullable=False)
+    email: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
     code_hash: Mapped[str] = mapped_column(Text, nullable=False)
     purpose: Mapped[str] = mapped_column(String(20), nullable=False)
     # signup pending data (full_name, roll_no, role, year, branch, gender) stored with the code so it survives restarts
@@ -100,12 +100,12 @@ class Payment(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    giver_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    collector_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    giver_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    collector_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
     transaction_ref: Mapped[str] = mapped_column(String(100), nullable=False)
     screenshot_key: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str | None] = mapped_column(String(20), server_default=text("'pending'"))
+    status: Mapped[str | None] = mapped_column(String(20), server_default=text("'pending'"), index=True)
     submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     verified_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
@@ -118,9 +118,9 @@ class Broadcast(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     sent_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    filter_role: Mapped[str | None] = mapped_column(String(20), server_default=text("'all'"))
-    filter_year: Mapped[int | None] = mapped_column(SmallInteger)
-    filter_branch: Mapped[str | None] = mapped_column(String(10))
-    filter_gender: Mapped[str | None] = mapped_column(String(10))
+    filter_role: Mapped[str | None] = mapped_column(String(20), server_default=text("'all'"), index=True)
+    filter_year: Mapped[int | None] = mapped_column(SmallInteger, index=True)
+    filter_branch: Mapped[str | None] = mapped_column(String(10), index=True)
+    filter_gender: Mapped[str | None] = mapped_column(String(10), index=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), server_default=text("now()"))

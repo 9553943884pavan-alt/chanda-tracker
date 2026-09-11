@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/useAuth'
+import { useToast } from '../context/ToastContext'
 import Announcements from './Announcements'
 
 function errorMessage(error, fallback) {
@@ -19,12 +20,11 @@ function isValidTransactionRef(ref) {
 
 export default function GiverDashboard() {
   const { logout } = useAuth()
+  const { showToast } = useToast()
   const [collector, setCollector] = useState(null)
   const [payments, setPayments] = useState(null)
   const [loading, setLoading] = useState(true)
   const [form, setForm] = useState({ amount: '', transaction_ref: '', screenshot: null })
-  const [message, setMessage] = useState('')
-  const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   function statusStyles(status) {
@@ -42,7 +42,7 @@ export default function GiverDashboard() {
       setPayments(data)
     } catch (requestError) {
       setPayments([])
-      setError(errorMessage(requestError, 'Unable to load your payment history.'))
+      showToast(errorMessage(requestError, 'Unable to load your payment history.'), 'error')
     }
   }
 
@@ -52,7 +52,7 @@ export default function GiverDashboard() {
         const { data } = await api.get('/giver/my-collector')
         setCollector(data)
       } catch (requestError) {
-        setError(errorMessage(requestError, 'Unable to load your assigned collector.'))
+        showToast(errorMessage(requestError, 'Unable to load your assigned collector.'), 'error')
       } finally {
         setLoading(false)
       }
@@ -69,15 +69,13 @@ export default function GiverDashboard() {
   async function submitPayment(event) {
     event.preventDefault()
     setSubmitting(true)
-    setError('')
-    setMessage('')
     if (!form.screenshot) {
-      setError('Choose a payment screenshot before submitting.')
+      showToast('Choose a payment screenshot before submitting.', 'error')
       setSubmitting(false)
       return
     }
     if (!isValidTransactionRef(form.transaction_ref)) {
-      setError('Enter a valid 12-digit UTR number or a PhonePe Transaction ID starting with T.')
+      showToast('Enter a valid 12-digit UTR number or a PhonePe Transaction ID starting with T.', 'error')
       setSubmitting(false)
       return
     }
@@ -87,12 +85,12 @@ export default function GiverDashboard() {
     formData.append('screenshot', form.screenshot)
     try {
       const { data } = await api.post('/giver/submit-payment', formData)
-      setMessage(data.message || 'Payment submitted for verification.')
+      showToast(data.message || 'Payment submitted for verification.')
       setForm({ amount: '', transaction_ref: '', screenshot: null })
       event.target.reset()
       await loadPayments()
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to submit payment.'))
+      showToast(errorMessage(requestError, 'Unable to submit payment.'), 'error')
     } finally {
       setSubmitting(false)
     }
@@ -187,7 +185,6 @@ export default function GiverDashboard() {
           <p className="mt-5 rounded-xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">Your payment has been verified by your collector. No further action is needed.</p>
         )}
       </section>
-      {(error || message) && <div className="mx-auto mt-6 max-w-6xl">{error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}{message && <p className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{message}</p>}</div>}
     </main>
   )
 }

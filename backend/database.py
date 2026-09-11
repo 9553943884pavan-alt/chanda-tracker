@@ -20,10 +20,14 @@ elif database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
 
 
+# Supabase transaction-pooler friendly pool sizing (port 6543):
+# modest base pool + bounded overflow so bursts don't exhaust pooler connection limits.
 engine = create_async_engine(
     database_url,
     connect_args={"statement_cache_size": 0},
     pool_pre_ping=True,
+    pool_size=5,
+    max_overflow=10,
 )
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

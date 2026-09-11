@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/useAuth'
+import { useToast } from '../context/ToastContext'
 import Announcements from './Announcements'
 
 function errorMessage(error, fallback) {
@@ -19,9 +20,8 @@ function StatusBadge({ status }) {
 
 export default function CollectorDashboard() {
   const { logout } = useAuth()
+  const { showToast } = useToast()
   const [payments, setPayments] = useState(null)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [verificationId, setVerificationId] = useState(null)
   const [profile, setProfile] = useState({ upi_id: '', phone: '', qr_image_url: null, qr_image: null })
   const [savingProfile, setSavingProfile] = useState(false)
@@ -30,10 +30,9 @@ export default function CollectorDashboard() {
     try {
       const { data } = await api.get('/collector/my-payments')
       setPayments(data)
-      setError('')
     } catch (requestError) {
       setPayments([])
-      setError(errorMessage(requestError, 'Unable to load payments.'))
+      showToast(errorMessage(requestError, 'Unable to load payments.'), 'error')
     }
   }
 
@@ -63,11 +62,9 @@ export default function CollectorDashboard() {
 
   async function saveProfile(event) {
     event.preventDefault()
-    setError('')
-    setMessage('')
 
     if (!profile.qr_image && !profile.qr_image_url) {
-      setError('Choose a QR image before saving your profile.')
+      showToast('Choose a QR image before saving your profile.', 'error')
       return
     }
 
@@ -79,14 +76,14 @@ export default function CollectorDashboard() {
 
     try {
       const { data } = await api.post('/collector/profile', formData)
-      setMessage('Collector profile and QR code saved.')
+      showToast('Collector profile and QR code saved.')
       setProfile((current) => ({
         ...current,
         qr_image_url: data.qr_image_url || current.qr_image_url,
         qr_image: null,
       }))
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to save collector profile.'))
+      showToast(errorMessage(requestError, 'Unable to save collector profile.'), 'error')
     } finally {
       setSavingProfile(false)
     }
@@ -94,12 +91,11 @@ export default function CollectorDashboard() {
 
   async function verifyPayment(paymentId, status) {
     setVerificationId(paymentId)
-    setError('')
     try {
       await api.patch(`/collector/payments/${paymentId}/verify`, { status })
       await loadPayments()
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to update payment status.'))
+      showToast(errorMessage(requestError, 'Unable to update payment status.'), 'error')
     } finally {
       setVerificationId(null)
     }
@@ -147,7 +143,6 @@ export default function CollectorDashboard() {
           </form>
         </section>
       </div>
-      {(error || message) && <div className="mx-auto mt-6 max-w-6xl">{error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}{message && <p className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{message}</p>}</div>}
     </main>
   )
 }

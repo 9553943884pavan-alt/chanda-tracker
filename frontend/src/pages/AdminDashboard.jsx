@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '../api'
 import { useAuth } from '../context/useAuth'
+import { useToast } from '../context/ToastContext'
 
 const initialFilters = { year: '', branch: '', gender: '' }
 
@@ -24,12 +25,11 @@ function filterParams(filters) {
 
 export default function AdminDashboard() {
   const { logout } = useAuth()
+  const { showToast } = useToast()
   const [filters, setFilters] = useState(initialFilters)
   const [payments, setPayments] = useState(null)
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
   const [broadcasting, setBroadcasting] = useState(false)
   const [broadcastMessage, setBroadcastMessage] = useState('')
   const [broadcastRole, setBroadcastRole] = useState('all')
@@ -48,10 +48,9 @@ export default function AdminDashboard() {
     try {
       const { data } = await api.get('/admin/payments', { params: filterParams(nextFilters) })
       setPayments(data)
-      setError('')
     } catch (requestError) {
       setPayments([])
-      setError(errorMessage(requestError, 'Unable to load payments.'))
+      showToast(errorMessage(requestError, 'Unable to load payments.'), 'error')
     } finally {
       setLoading(false)
     }
@@ -71,8 +70,6 @@ export default function AdminDashboard() {
 
   async function sendBroadcast(event) {
     event.preventDefault()
-    setError('')
-    setMessage('')
     setBroadcasting(true)
     try {
       const { data } = await api.post('/admin/broadcast', {
@@ -82,10 +79,10 @@ export default function AdminDashboard() {
         filter_role: broadcastRole,
         message: broadcastMessage,
       })
-      setMessage(`${data.message}. Sent to ${data.recipient_count} user${data.recipient_count === 1 ? '' : 's'}.`)
+      showToast(`${data.message}. Sent to ${data.recipient_count} user${data.recipient_count === 1 ? '' : 's'}.`)
       setBroadcastMessage('')
     } catch (requestError) {
-      setError(errorMessage(requestError, 'Unable to send broadcast.'))
+      showToast(errorMessage(requestError, 'Unable to send broadcast.'), 'error')
     } finally {
       setBroadcasting(false)
     }
@@ -144,7 +141,6 @@ export default function AdminDashboard() {
           <form className="mt-6 space-y-5" onSubmit={sendBroadcast}><div className="grid gap-3 sm:grid-cols-4"><label className="field-label">Send to<select className="field-input" name="role" value={broadcastRole} onChange={(event) => setBroadcastRole(event.target.value)}><option value="all">Everyone</option><option value="collector">Collectors</option><option value="giver">Givers</option></select></label><label className="field-label">Year<select className="field-input" name="year" value={filters.year} onChange={updateFilter}><option value="">All years</option>{[1, 2, 3, 4].map((year) => <option key={year} value={year}>{year}</option>)}</select></label><label className="field-label">Branch<select className="field-input" name="branch" value={filters.branch} onChange={updateFilter}><option value="">All branches</option><option value="IT">IT</option><option value="ECE">ECE</option></select></label><label className="field-label">Gender<select className="field-input" name="gender" value={filters.gender} onChange={updateFilter}><option value="">All genders</option><option value="M">M</option><option value="F">F</option></select></label></div><label className="field-label">Message<textarea className="field-input min-h-32 resize-y" value={broadcastMessage} onChange={(event) => setBroadcastMessage(event.target.value)} placeholder="Write an update for the selected audience..." required /></label><button className="primary-button sm:max-w-xs" type="submit" disabled={broadcasting}>{broadcasting ? 'Sending...' : 'Send Broadcast'}</button></form>
         </section>
       </div>
-      {(error || message) && <div className="mx-auto mt-6 max-w-6xl">{error && <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>}{message && <p className="rounded-xl bg-teal-50 px-4 py-3 text-sm text-teal-800">{message}</p>}</div>}
     </main>
   )
 }
