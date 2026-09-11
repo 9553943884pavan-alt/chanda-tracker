@@ -175,8 +175,9 @@ App runs at **http://localhost:5173**. If your backend runs elsewhere, set `VITE
 
 ## ⚠️ Known Limitations
 
-- Pending signups are held in server memory — a backend restart clears unverified signup sessions (re-request the OTP to continue)
-- OTPs are printed to the backend console when Brevo is not configured — intended for development only
+- OTP codes are printed to the backend console only when DEBUG=true is set (local development). Leave DEBUG unset in production (e.g. Render) — OTP codes never appear in logs
+- Pending signups are stored in the database (otp_codes.payload JSON column), so unverified signups survive backend restarts on platforms like Render
+- Expired OTP codes are not auto-purged from the otp_codes table; clean it periodically if the database grows
 - The `.env` file contains live secrets — never commit it (already in `.gitignore`); rotate keys if they were ever exposed
 
 ---
