@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { GoogleLogin } from '@react-oauth/google'
 import api from '../api'
 import { useAuth } from '../context/useAuth'
 
@@ -18,6 +19,32 @@ export default function Login() {
 
   function updateField(event) {
     setForm((current) => ({ ...current, [event.target.name]: event.target.value }))
+  }
+
+  // Login with Google — new endpoint POST /auth/google/login
+  async function handleGoogleLogin(credentialResponse) {
+    setError('')
+    setLoading(true)
+    try {
+      const { data } = await api.post('/auth/google/login', { credential: credentialResponse.credential })
+      const payload = login(data.access_token)
+      const destination = {
+        collector: '/collector-dashboard',
+        giver: '/giver-dashboard',
+        admin: '/admin-dashboard',
+      }[payload.role]
+      if (!destination) throw new Error('Unknown account role')
+      navigate(destination, { replace: true })
+    } catch (requestError) {
+      const message = requestError.response?.data?.detail || 'Unable to sign in with Google.'
+      setError(message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handleGoogleError() {
+    setError('Google sign-in was cancelled or failed. Please try again.')
   }
 
   async function handleSubmit(event) {
@@ -49,6 +76,20 @@ export default function Login() {
           <p className="mt-8 text-xs font-bold uppercase tracking-[0.24em] text-teal-700">Welcome back</p>
           <h1 className="mt-3 font-display text-4xl font-semibold tracking-tight text-stone-950">Sign in to continue.</h1>
           <p className="mt-3 leading-7 text-stone-500">Keep every contribution moving with clarity.</p>
+        </div>
+        <GoogleLogin
+          onSuccess={handleGoogleLogin}
+          onError={handleGoogleError}
+          text="signin_with"
+          shape="pill"
+          size="large"
+          width="100%"
+          hosted_domain="iiita.ac.in"
+        />
+        <div className="my-5 flex items-center gap-4 text-stone-400">
+          <span className="h-px flex-1 bg-stone-200" />
+          <span className="text-xs font-bold uppercase tracking-widest">or</span>
+          <span className="h-px flex-1 bg-stone-200" />
         </div>
         <form className="space-y-5" onSubmit={handleSubmit}>
           <label className="field-label">Institute email<input className="field-input" name="email" type="email" value={form.email} onChange={updateField} placeholder="you@iiita.ac.in" required /></label>

@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import { AuthProvider } from './context/AuthProvider'
 import { ToastProvider } from './context/ToastContext'
 import { useAuth } from './context/useAuth'
@@ -20,20 +21,22 @@ function ProtectedRoute({ children, roles }) {
 
 function App() {
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <Routes>
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/collector-dashboard" element={<ProtectedRoute roles={["collector"]}><CollectorDashboard /></ProtectedRoute>} />
-          <Route path="/giver-dashboard" element={<ProtectedRoute roles={["giver"]}><GiverDashboard /></ProtectedRoute>} />
-          <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </ToastProvider>
-    </AuthProvider>
+    <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
+      <AuthProvider>
+        <ToastProvider>
+          <Routes>
+            <Route path="/" element={<Navigate to="/login" replace />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/collector-dashboard" element={<ProtectedRoute roles={["collector"]}><CollectorDashboard /></ProtectedRoute>} />
+            <Route path="/giver-dashboard" element={<ProtectedRoute roles={["giver"]}><GiverDashboard /></ProtectedRoute>} />
+            <Route path="/admin-dashboard" element={<ProtectedRoute roles={["admin"]}><AdminDashboard /></ProtectedRoute>} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </ToastProvider>
+      </AuthProvider>
+    </GoogleOAuthProvider>
   )
 }
 

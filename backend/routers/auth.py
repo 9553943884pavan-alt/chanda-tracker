@@ -7,6 +7,9 @@ from typing import Literal
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, HTTPException, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+from google.auth.exceptions import GoogleAuthError
 from jose import jwt
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
@@ -28,6 +31,21 @@ JWT_EXPIRY = timedelta(days=7)
 BREVO_URL = "https://api.brevo.com/v3/smtp/email"
 # OTP codes are printed to the server console only when DEBUG=true is set (dev environments)
 DEBUG_MODE = os.getenv("DEBUG", "").strip().lower() in {"1", "true", "yes", "on"}
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+
+class GoogleSignupRequest(BaseModel):
+    credential: str  # Google ID token (JWT)
+    full_name: str = Field(min_length=1, max_length=100)
+    roll_no: str = Field(min_length=1, max_length=20)
+    role: Literal["collector", "giver"]
+    year: int = Field(ge=1, le=4)
+    branch: Literal["IT", "ECE"] | None = None
+    gender: Literal["M", "F"] | None = None
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str  # Google ID token (JWT)
 
 
 class SignupRequest(BaseModel):
@@ -93,6 +111,24 @@ def require_jwt_secret() -> str:
     if not jwt_secret:
         raise RuntimeError("JWT_SECRET is not set")
     return jwt_secret
+
+
+def verify_google_id_token(credential: str) -> dict:
+    """Verify a Google ID token and return its claims. Raises HTTPException on failure."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google authentication is not configured on the server")
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            credential,
+            google_requests.Request(),
+            GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=5,  # Tolerate up to 5 seconds of clock skew
+        )
+        return idinfo
+    except (ValueError, GoogleAuthError) as exc:
+        error_msg = str(exc)
+        print(f"[GOOGLE AUTH ERROR] {error_msg}")
+        raise HTTPException(status_code=401, detail=f"Invalid Google credential: {error_msg}") from exc
 
 
 async def send_signup_otp(email: str, otp: str) -> None:
@@ -340,3 +376,102 @@ async def login(request: LoginRequest, db: AsyncSession = Depends(get_db)):
         algorithm=JWT_ALGORITHM,
     )
     return {"access_token": token, "token_type": "bearer"}
+
+
+def _issue_jwt(user: User) -> dict:
+    token = jwt.encode(
+        {
+            "sub": str(user.id),
+            "role": user.role,
+            "exp": datetime.now(timezone.utc) + JWT_EXPIRY,
+        },
+        require_jwt_secret(),
+        algorithm=JWT_ALGORITHM,
+    )
+    return {"access_token": token, "token_type": "bearer"}
+
+
+@router.post("/google/signup")
+async def google_signup(request: GoogleSignupRequest, db: AsyncSession = Depends(get_db)):
+    # Defense in depth: the frontend hides "admin", but never trust client input alone.
+    if request.role == "admin":
+        raise HTTPException(status_code=403, detail="Admin accounts cannot be created through signup")
+
+    # Apply the same student validation rules as the email signup flow.
+    if request.year is None:
+        raise HTTPException(status_code=422, detail="Year is required")
+    if request.gender is None:
+        raise HTTPException(status_code=422, detail="Gender is required")
+    if request.gender == "M" and request.branch is None:
+        raise HTTPException(status_code=422, detail="Branch is required for male student accounts")
+
+    # Verify the Google ID token.
+    idinfo = verify_google_id_token(request.credential)
+
+    # Enforce IIITA-only accounts (hd claim + email domain, both must pass).
+    hd = idinfo.get("hd")
+    email = (idinfo.get("email") or "").strip().lower()
+    if hd != "iiita.ac.in" or not email.endswith("@iiita.ac.in"):
+        raise HTTPException(status_code=403, detail="Only IIITA college Google accounts are allowed")
+
+    google_sub = idinfo.get("sub")
+
+    # Reject if email, roll_no, or google_sub already exists — direct them to login instead.
+    existing_user = await db.scalar(
+        select(User).where(
+            (User.email == email) | (User.roll_no == request.roll_no) | (User.google_sub == google_sub)
+        )
+    )
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="An account with this email, roll number, or Google account already exists. Please sign in instead.",
+        )
+
+    user = User(
+        full_name=request.full_name,
+        email=email,
+        roll_no=request.roll_no,
+        google_sub=google_sub,
+        password_hash=None,
+        role=request.role,
+        year=request.year,
+        branch=request.branch,
+        gender=request.gender,
+        email_verified=True,  # Google already verified the email
+    )
+    db.add(user)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="An account with this email, roll number, or Google account already exists. Please sign in instead.",
+        ) from exc
+
+    return _issue_jwt(user)
+
+
+@router.post("/google/login")
+async def google_login(request: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    idinfo = verify_google_id_token(request.credential)
+
+    hd = idinfo.get("hd")
+    email = (idinfo.get("email") or "").strip().lower()
+    if hd != "iiita.ac.in" or not email.endswith("@iiita.ac.in"):
+        raise HTTPException(status_code=403, detail="Only IIITA college Google accounts are allowed")
+
+    google_sub = idinfo.get("sub")
+
+    # Look up by google_sub first, then by email (covers accounts created via either method).
+    user = await db.scalar(
+        select(User).where((User.google_sub == google_sub) | (User.email == email))
+    )
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found for this Google account — please sign up first",
+        )
+
+    return _issue_jwt(user)

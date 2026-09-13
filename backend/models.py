@@ -31,13 +31,17 @@ class User(Base):
         CheckConstraint("year BETWEEN 1 AND 4"),
         CheckConstraint("branch IN ('IT','ECE')"),
         CheckConstraint("gender IN ('M','F')"),
+        # Every user must have at least one authentication method.
+        CheckConstraint("password_hash IS NOT NULL OR google_sub IS NOT NULL"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     full_name: Mapped[str] = mapped_column(String(100), nullable=False)
     email: Mapped[str] = mapped_column(String(150), unique=True, nullable=False)
     roll_no: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    # Nullable: Google-only accounts carry no password; at least one of password_hash / google_sub is required (see CheckConstraint).
+    password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     year: Mapped[int | None] = mapped_column(SmallInteger)
     branch: Mapped[str | None] = mapped_column(String(10))
